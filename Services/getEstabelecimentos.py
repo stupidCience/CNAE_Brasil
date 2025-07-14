@@ -6,7 +6,6 @@ import sys
 import zipfile
 import pandas as pd
 
-# Importe o schema correto aqui
 from Schemas.estabSchema import ESTABELECIMENTOS_SCHEMA as COLUMNS
 
 def extrair_e_limpar(diretorio: Path):
@@ -21,12 +20,10 @@ def extrair_e_limpar(diretorio: Path):
                     zip_ref.extract(file_info, path=diretorio)
 
                     if file_info.filename.upper().endswith(".ESTABELE"):
-                        # Renomeia extensão para .csv
                         new_name = Path(file_info.filename).with_suffix(".csv")
                         new_path = diretorio / new_name
                         extracted_path.rename(new_path)
 
-                        # Renomeia com nome sequencial
                         sequencial_name = f"estabelecimentos{contador_csv:02d}.csv"
                         final_path = diretorio / sequencial_name
 
@@ -49,10 +46,12 @@ def extrair_e_limpar(diretorio: Path):
 
 def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str]):
     csv_files = sorted(diretorio.glob("estabelecimentos*.csv"))
-    final_csv_path = diretorio / "estabelecimentos_final.csv"
+    final_parquet_path = diretorio / "estabelecimentos_final.parquet"
 
-    if final_csv_path.exists():
-        final_csv_path.unlink()
+    if final_parquet_path.exists():
+        final_parquet_path.unlink()
+
+    all_chunks = []
 
     for i, csv_file in enumerate(csv_files):
         try:
@@ -62,26 +61,25 @@ def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str]):
                 header=None,
                 dtype=str,
                 encoding='latin1',
-                chunksize=100_000  # Ajustável conforme RAM disponível
+                chunksize=100_000
             )
 
-            for j, chunk in enumerate(chunk_iter):
+            for chunk in chunk_iter:
                 chunk.columns = colunas
-                chunk.to_csv(
-                    final_csv_path,
-                    index=False,
-                    sep=';',
-                    encoding='utf-8',
-                    mode='a',
-                    header=(i == 0 and j == 0)  # Escreve cabeçalho só uma vez
-                )
+                all_chunks.append(chunk)
 
             print(f"Processado: {csv_file.name}")
 
         except Exception as e:
             print(f"Erro ao processar {csv_file.name}: {e}")
 
-    # Remove arquivos intermediários
+    if all_chunks:
+        final_df = pd.concat(all_chunks, ignore_index=True)
+        final_df.to_parquet(final_parquet_path, index=False)
+        print(f"Dados combinados salvos em: {final_parquet_path.name}")
+    else:
+        print("Nenhum dado foi processado para salvar no arquivo Parquet.")
+
     for csv_file in csv_files:
         try:
             csv_file.unlink()
@@ -122,8 +120,8 @@ def getEstab():
                             percent = (downloaded / total_length) * 100 if total_length else 0
                             sys.stdout.write(f"\r[{'=' * done}{' ' * (50 - done)}] {percent:.2f}%")
                             sys.stdout.flush()
-            print(f"\nArquivo baixado para: {zip_path.name}")
-            contador += 1
+                print(f"\nArquivo baixado para: {zip_path.name}")
+                contador += 1
 
         except requests.exceptions.RequestException as e:
             print(f"Erro ao baixar arquivo: {e}")
@@ -132,3 +130,4 @@ def getEstab():
     extrair_e_limpar(output_dir)
     aplicar_schema_estabelecimentos(output_dir, COLUMNS)
     print("Processamento concluído.")
+    

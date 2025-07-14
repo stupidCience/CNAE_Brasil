@@ -1,3 +1,6 @@
 Data/*.csv
+Data/*.parquet
 database/*.csv
+database/*.parquet
 Auxiliar/simples.csv
+Auxiliar/*.parquet

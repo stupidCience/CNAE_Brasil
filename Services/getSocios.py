@@ -6,7 +6,6 @@ import sys
 import zipfile
 import pandas as pd
 
-# Importa o schema diretamente
 from Schemas.sociosSchema import SOCIOS_SCHEMA as COLUMNS
 
 def extrair_e_limpar(diretorio: Path):
@@ -47,10 +46,12 @@ def extrair_e_limpar(diretorio: Path):
 
 def aplicar_schema(diretorio: Path, colunas: list[str]):
     csv_files = sorted(diretorio.glob("socios*.csv"))
-    final_csv_path = diretorio / "socios_final.csv"
+    final_parquet_path = diretorio / "socios_final.parquet"
 
-    if final_csv_path.exists():
-        final_csv_path.unlink()
+    if final_parquet_path.exists():
+        final_parquet_path.unlink()
+
+    all_chunks = []
 
     for i, csv_file in enumerate(csv_files):
         try:
@@ -60,24 +61,24 @@ def aplicar_schema(diretorio: Path, colunas: list[str]):
                 header=None,
                 dtype=str,
                 encoding='latin1',
-                chunksize=100_000  # ajustável conforme a memória disponível
+                chunksize=100_000
             )
 
-            for j, chunk in enumerate(chunk_iter):
+            for chunk in chunk_iter:
                 chunk.columns = colunas
-                chunk.to_csv(
-                    final_csv_path,
-                    index=False,
-                    sep=';',
-                    encoding='utf-8',
-                    mode='a',
-                    header=(i == 0 and j == 0)  # adiciona cabeçalho apenas no primeiro chunk do primeiro arquivo
-                )
+                all_chunks.append(chunk)
 
             print(f"Processado: {csv_file.name}")
 
         except Exception as e:
             print(f"Erro ao processar {csv_file.name}: {e}")
+
+    if all_chunks:
+        final_df = pd.concat(all_chunks, ignore_index=True)
+        final_df.to_parquet(final_parquet_path, index=False)
+        print(f"Dados combinados salvos em: {final_parquet_path.name}")
+    else:
+        print("Nenhum dado foi processado para salvar no arquivo Parquet.")
 
     for csv_file in csv_files:
         try:
@@ -119,8 +120,8 @@ def getSocios():
                             percent = (downloaded / total_length) * 100 if total_length else 0
                             sys.stdout.write(f"\r[{'=' * done}{' ' * (50 - done)}] {percent:.2f}%")
                             sys.stdout.flush()
-            print(f"\nArquivo baixado para: {zip_path.name}")
-            contador += 1
+                print(f"\nArquivo baixado para: {zip_path.name}")
+                contador += 1
 
         except requests.exceptions.RequestException as e:
             print(f"Erro ao baixar arquivo: {e}")
@@ -129,3 +130,4 @@ def getSocios():
     extrair_e_limpar(output_dir)
     aplicar_schema(output_dir, COLUMNS)
     print("Processamento concluído.")
+    

@@ -1,3 +1,5 @@
+# main.py corrigido
+
 import sys
 import os
 
@@ -10,16 +12,18 @@ import process.empresasConstructor
 import process.estabelecimentoConstructor
 import process.sociosConstructor
 
-def run_services():
-    Services.getSocios.getSocios()
+def run_all_processes():
+    # 1. Baixar e preparar dados de Empresas
     Services.getEmpresas.getEmp()
-    Services.getEstabelecimentos.getEstab()
-
-def run_processing():
     process.empresasConstructor.empresasConstructor()
+
+    # 2. Baixar e preparar dados de Estabelecimentos
+    Services.getEstabelecimentos.getEstab()
     process.estabelecimentoConstructor.estabelecimentoConstructor()
+
+    # 3. Baixar e preparar dados de Sócios
+    Services.getSocios.getSocios()
     process.sociosConstructor.sociosConstructor()
 
 if __name__ == "__main__":
-    run_services()
-    run_processing()
+    run_all_processes()
