@@ -5,6 +5,9 @@ from pathlib import Path
 import sys
 import zipfile
 import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow as pa
+from tqdm import tqdm
 
 from Schemas.estabSchema import ESTABELECIMENTOS_SCHEMA as COLUMNS
 
@@ -44,48 +47,97 @@ def extrair_e_limpar(diretorio: Path):
         except Exception as e:
             print(f"Erro ao processar {zip_path.name}: {e}")
 
-def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str]):
+def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_size_csv=100_000):
+    """
+    Lê arquivos CSV em chunks, aplica o schema e salva os chunks diretamente
+    em um arquivo Parquet final, evitando carregar tudo na memória.
+    Cada arquivo CSV é removido após seu processamento completo.
+
+    Args:
+        diretorio (Path): O diretório onde os arquivos CSV estão localizados.
+        colunas (list[str]): A lista de nomes de colunas a serem aplicadas.
+        chunk_size_csv (int): O número de linhas a serem lidas de cada CSV em um chunk.
+    """
     csv_files = sorted(diretorio.glob("estabelecimentos*.csv"))
     final_parquet_path = diretorio / "estabelecimentos_final.parquet"
 
     if final_parquet_path.exists():
         final_parquet_path.unlink()
+        print(f"Arquivo existente removido: {final_parquet_path.name}")
 
-    all_chunks = []
+    parquet_writer = None # Inicializa o escritor Parquet
 
-    for i, csv_file in enumerate(csv_files):
-        try:
-            chunk_iter = pd.read_csv(
-                csv_file,
-                sep=';',
-                header=None,
-                dtype=str,
-                encoding='latin1',
-                chunksize=100_000
-            )
+    if not csv_files:
+        print("Nenhum arquivo CSV 'estabelecimentos*.csv' encontrado para processar.")
+        return
 
-            for chunk in chunk_iter:
-                chunk.columns = colunas
-                all_chunks.append(chunk)
+    # --- NOVO: Define o esquema PyArrow explicitamente ---
+    # Assume que todas as colunas podem ser strings e são anuláveis dos CSVs brutos
+    parquet_schema_fields = []
+    for col_name in colunas:
+        parquet_schema_fields.append(pa.field(col_name, pa.string(), nullable=True))
+    explicit_parquet_schema = pa.schema(parquet_schema_fields)
 
-            print(f"Processado: {csv_file.name}")
+    with tqdm(total=len(csv_files), desc="Processando arquivos CSV de estabelecimentos") as pbar_csv:
+        for i, csv_file in enumerate(csv_files):
+            print(f"Iniciando processamento de {csv_file.name}...") 
+            try:
+                chunk_iter = pd.read_csv(
+                    csv_file,
+                    sep=';',
+                    header=None,
+                    dtype=str,
+                    encoding='latin1',
+                    chunksize=chunk_size_csv
+                )
+                
+                for chunk_num, chunk in enumerate(chunk_iter):
+                    print(f"  Processando chunk {chunk_num} de {csv_file.name}. Shape: {chunk.shape}, Empty: {chunk.empty}")
+                    if chunk.empty:
+                        continue # Pula chunks vazios
 
-        except Exception as e:
-            print(f"Erro ao processar {csv_file.name}: {e}")
+                    chunk.columns = colunas
+                    
+                    if parquet_writer is None:
+                        # Cria o escritor Parquet com o ESQUEMA EXPLÍCITO
+                        parquet_writer = pq.ParquetWriter(final_parquet_path, explicit_parquet_schema)
+                        print(f"  ParquetWriter inicializado para {final_parquet_path.name} com esquema explícito.") 
+                    
+                    # Converte o chunk para PyArrow Table usando o esquema explícito
+                    # Isso irá validar e coagir os tipos para corresponder ao esquema definido
+                    table_chunk = pa.Table.from_pandas(chunk, schema=explicit_parquet_schema, preserve_index=False)
+                    parquet_writer.write_table(table_chunk)
+                
+                # --- Removido o arquivo CSV logo após seu processamento completo ---
+                try:
+                    csv_file.unlink()
+                    print(f"Removido arquivo intermediário: {csv_file.name}")
+                except Exception as e:
+                    print(f"Erro ao remover {csv_file.name}: {e}")
 
-    if all_chunks:
-        final_df = pd.concat(all_chunks, ignore_index=True)
-        final_df.to_parquet(final_parquet_path, index=False)
+                print(f"Processamento de {csv_file.name} concluído.") 
+                pbar_csv.update(1)
+                
+            except pd.errors.EmptyDataError:
+                print(f"Atenção: O arquivo CSV '{csv_file.name}' está vazio ou contém apenas o cabeçalho. Pulando.")
+                try:
+                    csv_file.unlink()
+                    print(f"Removido arquivo intermediário vazio: {csv_file.name}")
+                except Exception as e:
+                    print(f"Erro ao remover arquivo CSV vazio {csv_file.name}: {e}")
+                pbar_csv.update(1)
+            except Exception as e:
+                print(f"Erro inesperado ao processar {csv_file.name}: {e}")
+                if parquet_writer:
+                    parquet_writer.close() 
+                # Não está quebrando para tentar processar outros arquivos CSV
+                # break 
+
+    if parquet_writer:
+        parquet_writer.close() 
         print(f"Dados combinados salvos em: {final_parquet_path.name}")
     else:
-        print("Nenhum dado foi processado para salvar no arquivo Parquet.")
-
-    for csv_file in csv_files:
-        try:
-            csv_file.unlink()
-            print(f"Removido arquivo intermediário: {csv_file.name}")
-        except Exception as e:
-            print(f"Erro ao remover {csv_file.name}: {e}")
+        print("Nenhum dado foi processado e escrito para o arquivo Parquet final.")
 
 def getEstab():
     today = datetime.today()
@@ -128,6 +180,5 @@ def getEstab():
             break
 
     extrair_e_limpar(output_dir)
-    aplicar_schema_estabelecimentos(output_dir, COLUMNS)
+    aplicar_schema_estabelecimentos(output_dir, COLUMNS, chunk_size_csv=100_000) 
     print("Processamento concluído.")
-    

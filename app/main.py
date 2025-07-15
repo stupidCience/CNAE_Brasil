@@ -13,13 +13,16 @@ import process.estabelecimentoConstructor
 import process.sociosConstructor
 
 def run_all_processes():
+    
+    Services.getEstabelecimentos.getEstab()
+    process.estabelecimentoConstructor.estabelecimentoConstructor()
+    
     # 1. Baixar e preparar dados de Empresas
     Services.getEmpresas.getEmp()
     process.empresasConstructor.empresasConstructor()
 
     # 2. Baixar e preparar dados de Estabelecimentos
-    Services.getEstabelecimentos.getEstab()
-    process.estabelecimentoConstructor.estabelecimentoConstructor()
+   
 
     # 3. Baixar e preparar dados de Sócios
     Services.getSocios.getSocios()

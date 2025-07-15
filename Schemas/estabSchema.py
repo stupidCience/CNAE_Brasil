@@ -28,5 +28,5 @@ ESTABELECIMENTOS_SCHEMA = [
     "email",
     "situacao_especial",
     "data_situacao_especial",
-    "motivo_situacao_cadastral"
+    "cnae_fiscal_secundario" # Coluna corrigida para resolver o problema de duplicidade
 ]

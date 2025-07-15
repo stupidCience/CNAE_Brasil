@@ -5,6 +5,9 @@ from pathlib import Path
 import sys
 import zipfile
 import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow as pa
+from tqdm import tqdm
 
 from Schemas.sociosSchema import SOCIOS_SCHEMA as COLUMNS
 
@@ -44,42 +47,71 @@ def extrair_e_limpar(diretorio: Path):
         except Exception as e:
             print(f"Erro ao processar {zip_path.name}: {e}")
 
-def aplicar_schema(diretorio: Path, colunas: list[str]):
+def aplicar_schema(diretorio: Path, colunas: list[str], chunk_size_csv=100_000):
+    """
+    Lê arquivos CSV em chunks, aplica o schema e salva os chunks diretamente
+    em um arquivo Parquet final, evitando carregar tudo na memória.
+
+    Args:
+        diretorio (Path): O diretório onde os arquivos CSV estão localizados.
+        colunas (list[str]): A lista de nomes de colunas a serem aplicadas.
+        chunk_size_csv (int): O número de linhas a serem lidas de cada CSV em um chunk.
+    """
     csv_files = sorted(diretorio.glob("socios*.csv"))
     final_parquet_path = diretorio / "socios_final.parquet"
 
     if final_parquet_path.exists():
         final_parquet_path.unlink()
+        print(f"Arquivo existente removido: {final_parquet_path.name}")
 
-    all_chunks = []
+    parquet_writer = None # Inicializa o escritor Parquet
 
-    for i, csv_file in enumerate(csv_files):
-        try:
-            chunk_iter = pd.read_csv(
-                csv_file,
-                sep=';',
-                header=None,
-                dtype=str,
-                encoding='latin1',
-                chunksize=100_000
-            )
+    if not csv_files:
+        print("Nenhum arquivo CSV 'socios*.csv' encontrado para processar.")
+        return
 
-            for chunk in chunk_iter:
-                chunk.columns = colunas
-                all_chunks.append(chunk)
+    # Use tqdm para o progresso geral dos arquivos CSV
+    with tqdm(total=len(csv_files), desc="Processando arquivos CSV de sócios") as pbar_csv:
+        for i, csv_file in enumerate(csv_files):
+            try:
+                chunk_iter = pd.read_csv(
+                    csv_file,
+                    sep=';',
+                    header=None,
+                    dtype=str,
+                    encoding='latin1',
+                    chunksize=chunk_size_csv # Usa o parâmetro chunk_size_csv
+                )
 
-            print(f"Processado: {csv_file.name}")
+                # Itera sobre os chunks de cada arquivo CSV
+                for chunk in chunk_iter:
+                    chunk.columns = colunas
+                    
+                    if parquet_writer is None:
+                        # Cria o escritor Parquet com o schema do primeiro chunk
+                        schema = pa.Table.from_pandas(chunk).schema
+                        parquet_writer = pq.ParquetWriter(final_parquet_path, schema)
+                    
+                    parquet_writer.write_table(pa.Table.from_pandas(chunk))
+                
+                print(f"Processado e chunks escritos para {csv_file.name}")
+                pbar_csv.update(1) # Atualiza a barra de progresso externa para cada CSV
+                
+            except Exception as e:
+                print(f"Erro ao processar {csv_file.name}: {e}")
+                if parquet_writer:
+                    parquet_writer.close() # Garante que o escritor seja fechado em caso de erro
+                # Quebra o loop se ocorrer um erro em um arquivo CSV
+                break 
 
-        except Exception as e:
-            print(f"Erro ao processar {csv_file.name}: {e}")
-
-    if all_chunks:
-        final_df = pd.concat(all_chunks, ignore_index=True)
-        final_df.to_parquet(final_parquet_path, index=False)
+    # Fecha o escritor Parquet após todos os CSVs serem processados
+    if parquet_writer:
+        parquet_writer.close() 
         print(f"Dados combinados salvos em: {final_parquet_path.name}")
     else:
         print("Nenhum dado foi processado para salvar no arquivo Parquet.")
 
+    # Limpa os arquivos CSV intermediários
     for csv_file in csv_files:
         try:
             csv_file.unlink()
@@ -128,6 +160,7 @@ def getSocios():
             break
 
     extrair_e_limpar(output_dir)
-    aplicar_schema(output_dir, COLUMNS)
+    # Passa o chunk_size_csv para aplicar_schema
+    aplicar_schema(output_dir, COLUMNS, chunk_size_csv=100_000) 
     print("Processamento concluído.")
     
