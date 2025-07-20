@@ -1,3 +1,6 @@
-pandas
-tqdm
-pyarrow
+pandas>=1.5
+tqdm>=4.64
+duckdb>=0.9
+requests>=2.28
+python-dateutil>=2.8
+pyarrow>=13.0
