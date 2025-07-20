@@ -5,5 +5,5 @@ EMPRESAS_SCHEMA = [
     "qualificacao_responsavel",
     "capital_social",
     "porte_empresa",
-    "ente_federativo_responsavel",
+    "ente_federativo_responsavel"
 ]

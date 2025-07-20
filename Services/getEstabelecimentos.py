@@ -5,10 +5,9 @@ from pathlib import Path
 import sys
 import zipfile
 import pandas as pd
-import pyarrow.parquet as pq
-import pyarrow as pa
 from tqdm import tqdm
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 from Schemas.estabSchema import ESTABELECIMENTOS_SCHEMA as COLUMNS
 
 def extrair_e_limpar(diretorio: Path):
@@ -50,33 +49,19 @@ def extrair_e_limpar(diretorio: Path):
 def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_size_csv=100_000):
     """
     Lê arquivos CSV em chunks, aplica o schema e salva os chunks diretamente
-    em um arquivo Parquet final, evitando carregar tudo na memória.
+    em um arquivo CSV final, evitando carregar tudo na memória.
     Cada arquivo CSV é removido após seu processamento completo.
-
-    Args:
-        diretorio (Path): O diretório onde os arquivos CSV estão localizados.
-        colunas (list[str]): A lista de nomes de colunas a serem aplicadas.
-        chunk_size_csv (int): O número de linhas a serem lidas de cada CSV em um chunk.
     """
     csv_files = sorted(diretorio.glob("estabelecimentos*.csv"))
-    final_parquet_path = diretorio / "estabelecimentos_final.parquet"
+    final_csv_path = diretorio / "estabelecimentos_final.csv"
 
-    if final_parquet_path.exists():
-        final_parquet_path.unlink()
-        print(f"Arquivo existente removido: {final_parquet_path.name}")
-
-    parquet_writer = None # Inicializa o escritor Parquet
+    if final_csv_path.exists():
+        final_csv_path.unlink()
+        print(f"Arquivo existente removido: {final_csv_path.name}")
 
     if not csv_files:
         print("Nenhum arquivo CSV 'estabelecimentos*.csv' encontrado para processar.")
         return
-
-    # --- NOVO: Define o esquema PyArrow explicitamente ---
-    # Assume que todas as colunas podem ser strings e são anuláveis dos CSVs brutos
-    parquet_schema_fields = []
-    for col_name in colunas:
-        parquet_schema_fields.append(pa.field(col_name, pa.string(), nullable=True))
-    explicit_parquet_schema = pa.schema(parquet_schema_fields)
 
     with tqdm(total=len(csv_files), desc="Processando arquivos CSV de estabelecimentos") as pbar_csv:
         for i, csv_file in enumerate(csv_files):
@@ -97,18 +82,10 @@ def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_s
                         continue # Pula chunks vazios
 
                     chunk.columns = colunas
-                    
-                    if parquet_writer is None:
-                        # Cria o escritor Parquet com o ESQUEMA EXPLÍCITO
-                        parquet_writer = pq.ParquetWriter(final_parquet_path, explicit_parquet_schema)
-                        print(f"  ParquetWriter inicializado para {final_parquet_path.name} com esquema explícito.") 
-                    
-                    # Converte o chunk para PyArrow Table usando o esquema explícito
-                    # Isso irá validar e coagir os tipos para corresponder ao esquema definido
-                    table_chunk = pa.Table.from_pandas(chunk, schema=explicit_parquet_schema, preserve_index=False)
-                    parquet_writer.write_table(table_chunk)
+                    # Escreve o cabeçalho apenas no primeiro chunk do primeiro arquivo
+                    header = (i == 0 and chunk_num == 0)
+                    chunk.to_csv(final_csv_path, mode='a', index=False, sep=';', header=header)
                 
-                # --- Removido o arquivo CSV logo após seu processamento completo ---
                 try:
                     csv_file.unlink()
                     print(f"Removido arquivo intermediário: {csv_file.name}")
@@ -128,16 +105,8 @@ def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_s
                 pbar_csv.update(1)
             except Exception as e:
                 print(f"Erro inesperado ao processar {csv_file.name}: {e}")
-                if parquet_writer:
-                    parquet_writer.close() 
-                # Não está quebrando para tentar processar outros arquivos CSV
-                # break 
 
-    if parquet_writer:
-        parquet_writer.close() 
-        print(f"Dados combinados salvos em: {final_parquet_path.name}")
-    else:
-        print("Nenhum dado foi processado e escrito para o arquivo Parquet final.")
+    print(f"Dados combinados salvos em: {final_csv_path.name}")
 
 def getEstab():
     today = datetime.today()
@@ -182,3 +151,6 @@ def getEstab():
     extrair_e_limpar(output_dir)
     aplicar_schema_estabelecimentos(output_dir, COLUMNS, chunk_size_csv=100_000) 
     print("Processamento concluído.")
+
+if __name__ == "__main__":
+    getEstab()
