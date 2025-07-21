@@ -3,6 +3,18 @@ import os
 from tqdm import tqdm
 import glob
 
+import pandas as pd
+import os
+from tqdm import tqdm
+import glob
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from Schemas.sociosSchema import SOCIOS_SCHEMA
+
+QUALIFICACOES_SCHEMA = ["id", "descricao"]
+PAISES_SCHEMA = ["id_pais", "descricao_pais"]
+
 def sociosConstructor(chunk_size=100000):
     input_directory = "./Data/"
     csv_pattern = os.path.join(input_directory, "socios*.csv")
@@ -68,10 +80,12 @@ def sociosConstructor(chunk_size=100000):
             chunk_iter = pd.read_csv(
                 csv_file,
                 sep=';',
+                header=None,
+                names=SOCIOS_SCHEMA,
+                dtype=str,
                 encoding='latin1',
                 on_bad_lines='warn',
-                chunksize=chunk_size,
-                dtype=str  # Garante que tudo seja lido como string
+                chunksize=chunk_size
             )
             
             for socios_chunk in chunk_iter:

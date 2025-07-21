@@ -2,6 +2,10 @@ import pandas as pd
 import os
 from tqdm import tqdm
 import glob
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from Schemas.estabSchema import ESTABELECIMENTOS_SCHEMA
 
 def estabelecimentoConstructor(chunk_size=100000):
     input_directory = "./Data/"
@@ -48,8 +52,10 @@ def estabelecimentoConstructor(chunk_size=100000):
             chunk_iter = pd.read_csv(
                 csv_file,
                 sep=';',
+                header=None,
+                names=ESTABELECIMENTOS_SCHEMA,
                 dtype=str,
-                encoding='utf-8',
+                encoding='latin1',
                 on_bad_lines='warn',
                 chunksize=chunk_size
             )

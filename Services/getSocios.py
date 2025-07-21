@@ -66,13 +66,13 @@ def aplicar_schema(diretorio: Path, colunas: list[str], chunk_size_csv=100_000):
                     csv_file,
                     sep=';',
                     header=None,
+                    names=colunas,
                     dtype=str,
                     encoding='latin1',
                     chunksize=chunk_size_csv
                 )
 
                 for idx, chunk in enumerate(chunk_iter):
-                    chunk.columns = colunas
         
                     header = (i == 0 and idx == 0)
                     chunk.to_csv(final_csv_path, mode='a', index=False, sep=';', header=header)

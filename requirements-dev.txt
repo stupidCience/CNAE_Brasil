@@ -1,0 +1,23 @@
+# ====================================================
+# CNAE Brasil - Development Requirements
+# ====================================================
+# Dependências adicionais para desenvolvimento e análise
+
+# Jupyter & Analysis
+jupyter>=1.0.0             # Notebooks para análise exploratória
+jupyterlab>=4.0.0          # Interface moderna do Jupyter
+notebook>=7.0.0            # Notebook clássico
+
+# Code Quality & Formatting  
+black>=23.0.0              # Formatação de código
+flake8>=6.0.0              # Linting
+isort>=5.12.0              # Ordenação de imports
+
+# Performance Monitoring
+memory-profiler>=0.61.0    # Monitoramento de memória
+psutil>=5.9.0              # Informações do sistema
+
+# Visualization (opcional)
+matplotlib>=3.7.0          # Gráficos básicos
+seaborn>=0.12.0            # Gráficos estatísticos
+plotly>=5.17.0             # Gráficos interativos

@@ -71,6 +71,7 @@ def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_s
                     csv_file,
                     sep=';',
                     header=None,
+                    names=colunas,
                     dtype=str,
                     encoding='latin1',
                     chunksize=chunk_size_csv
@@ -80,8 +81,6 @@ def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_s
                     print(f"  Processando chunk {chunk_num} de {csv_file.name}. Shape: {chunk.shape}, Empty: {chunk.empty}")
                     if chunk.empty:
                         continue # Pula chunks vazios
-
-                    chunk.columns = colunas
                     # Escreve o cabeçalho apenas no primeiro chunk do primeiro arquivo
                     header = (i == 0 and chunk_num == 0)
                     chunk.to_csv(final_csv_path, mode='a', index=False, sep=';', header=header)

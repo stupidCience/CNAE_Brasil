@@ -64,14 +64,13 @@ def aplicar_schema_empresas(diretorio: Path, colunas: list[str], chunk_size_csv=
                     csv_file,
                     sep=';',
                     header=None,
-                    names=COLUMNS,
+                    names=colunas,
                     dtype=str,
                     encoding='latin1',
                     chunksize=chunk_size_csv
                 )
 
                 for idx, chunk in enumerate(chunk_iter):
-                    chunk.columns = colunas
                     # Escreve o cabeçalho apenas no primeiro chunk do primeiro arquivo
                     header = (i == 0 and idx == 0)
                     chunk.to_csv(final_csv_path, mode='a', index=False, sep=';', header=header)

@@ -1,19 +1,19 @@
 import pandas as pd
 import os
 from tqdm import tqdm
-import glob
 import traceback
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from Schemas.empSchema import EMPRESAS_SCHEMA
 
 def empresasConstructor(chunk_size=100000):
     input_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Data")
     input_directory = os.path.abspath(input_directory)
     
     csv_file = os.path.join(input_directory, "empresas_final.csv")
-    natureza_path = "./CNAE_Brasil/Auxiliar/naturezas.csv"
-    output_path = "./CNAE_Brasil/database/empresas_final.csv"
+    natureza_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Auxiliar", "naturezas.csv")
+    output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "database", "empresas_final.csv")
     
     print("Diretório atual:", os.getcwd())
     print("Arquivo procurado:", os.path.abspath(csv_file))
@@ -52,6 +52,9 @@ def empresasConstructor(chunk_size=100000):
             chunk_iter = pd.read_csv(
                 csv_file,
                 sep=';',
+                header=None,
+                names=EMPRESAS_SCHEMA,
+                dtype=str,
                 encoding='latin1',
                 chunksize=chunk_size
             )
