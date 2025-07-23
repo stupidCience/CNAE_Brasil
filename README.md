@@ -50,8 +50,7 @@ CNAE_Brasil/
 ### 1. Instalação
 
 ```bash
-git clone https://github.com/seu-usuario/cnae-brasil.git
-cd cnae-brasil
+git clone https://github.com/stupidCience/CNAE_Brasil
 pip install -r requirements.txt
 ```
 
