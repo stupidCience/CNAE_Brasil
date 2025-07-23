@@ -44,9 +44,17 @@ class DatabaseConnection:
         try:
             cursor = self.connection.cursor()
             cursor.execute(query, params or ())
-            result = cursor.fetchall()
-            cursor.close()
-            return result
+            
+            # Para DDL statements (CREATE, ALTER, DROP), não há resultado para buscar
+            if query.strip().upper().startswith(('CREATE', 'ALTER', 'DROP', 'INSERT', 'UPDATE', 'DELETE')):
+                self.connection.commit()
+                cursor.close()
+                return True
+            else:
+                # Para SELECT statements
+                result = cursor.fetchall()
+                cursor.close()
+                return result
         except Error as e:
             print(f"❌ Erro na query: {e}")
             return None

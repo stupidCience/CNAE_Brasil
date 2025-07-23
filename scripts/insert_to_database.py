@@ -59,12 +59,15 @@ def criar_tabelas(db_conn):
     
     queries = [create_empresas, create_estabelecimentos]
     
-    for query in queries:
+    for i, query in enumerate(queries, 1):
+        table_name = "empresas_qualificacoes" if i == 1 else "estabelecimentos"
+        print(f"📋 Criando tabela {table_name}...")
+        
         result = db_conn.execute_query(query)
-        if result is not None:
-            print("✅ Tabela criada com sucesso")
+        if result is True:
+            print(f"✅ Tabela {table_name} criada com sucesso")
         else:
-            print("❌ Erro ao criar tabela")
+            print(f"❌ Erro ao criar tabela {table_name}")
             return False
     
     return True
@@ -73,12 +76,13 @@ def inserir_dados_empresas(db_conn, chunk_size=50000):
     """Insere dados de empresas no banco"""
     print("📊 Inserindo dados de empresas...")
     
-    parquet_file = Path("database/empresas_final.parquet")
-    if not parquet_file.exists():
-        print("❌ Arquivo empresas_final.parquet não encontrado")
+    # Verifica se arquivo CSV existe (mais confiável que parquet)
+    csv_file = Path("database/empresas_final.csv")
+    if not csv_file.exists():
+        print("❌ Arquivo empresas_final.csv não encontrado")
         return False
     
-    # Lê dados com DuckDB
+    # Lê dados com DuckDB diretamente do CSV
     con = db.connect()
     query = f"""
         SELECT 
@@ -86,44 +90,58 @@ def inserir_dados_empresas(db_conn, chunk_size=50000):
             razao_social,
             natureza_juridica,
             qualificacao_responsavel,
-            CAST(REPLACE(capital_social, ',', '.') AS DOUBLE) as capital_social,
+            CASE 
+                WHEN capital_social = '' OR capital_social IS NULL THEN 0.0
+                ELSE CAST(REPLACE(capital_social, ',', '.') AS DOUBLE)
+            END as capital_social,
             porte_empresa
-        FROM '{parquet_file}'
+        FROM read_csv('{csv_file}', 
+                     delim=';', 
+                     header=true)
         LIMIT {chunk_size}
     """
     
-    df = con.execute(query).fetchdf()
-    con.close()
-    
-    if df.empty:
-        print("❌ Nenhum dado encontrado")
+    try:
+        df = con.execute(query).fetchdf()
+        con.close()
+        
+        if df.empty:
+            print("❌ Nenhum dado encontrado")
+            return False
+        
+        print(f"📋 Processando {len(df):,} registros de empresas...")
+        
+        # Prepara dados para inserção
+        insert_query = """
+            INSERT INTO empresas_qualificacoes 
+            (cnpj_basico, razao_social, natureza_juridica, qualificacao_responsavel, capital_social, porte_empresa)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        
+        dados = []
+        for _, row in df.iterrows():
+            dados.append((
+                row['cnpj_basico'],
+                row['razao_social'][:255] if row['razao_social'] else '',  # Limita tamanho
+                row['natureza_juridica'],
+                row['qualificacao_responsavel'],
+                row['capital_social'] if pd.notna(row['capital_social']) else 0.0,
+                row['porte_empresa']
+            ))
+        
+        success = db_conn.execute_insert(insert_query, dados)
+        if success:
+            print(f"✅ {len(dados):,} registros de empresas inseridos")
+        else:
+            print("❌ Erro ao inserir dados de empresas")
+        
+        return success
+        
+    except Exception as e:
+        print(f"❌ Erro ao processar dados de empresas: {e}")
+        if con:
+            con.close()
         return False
-    
-    # Prepara dados para inserção
-    insert_query = """
-        INSERT INTO empresas_qualificacoes 
-        (cnpj_basico, razao_social, natureza_juridica, qualificacao_responsavel, capital_social, porte_empresa)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """
-    
-    dados = []
-    for _, row in df.iterrows():
-        dados.append((
-            row['cnpj_basico'],
-            row['razao_social'],
-            row['natureza_juridica'],
-            row['qualificacao_responsavel'],
-            row['capital_social'] if pd.notna(row['capital_social']) else None,
-            row['porte_empresa']
-        ))
-    
-    success = db_conn.execute_insert(insert_query, dados)
-    if success:
-        print(f"✅ {len(dados):,} registros de empresas inseridos")
-    else:
-        print("❌ Erro ao inserir dados de empresas")
-    
-    return success
 
 def main():
     """Função principal"""

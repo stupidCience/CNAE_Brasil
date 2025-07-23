@@ -50,7 +50,8 @@ CNAE_Brasil/
 ### 1. Instalação
 
 ```bash
-git clone https://github.com/stupidCience/CNAE_Brasil
+git clone https://github.com/seu-usuario/cnae-brasil.git
+cd cnae-brasil
 pip install -r requirements.txt
 ```
 
@@ -146,7 +147,7 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para de
 
 ## 🔗 Links Úteis
 
-- [Dados da Receita Federal](http://www.receita.fazenda.gov.br/publico/cnpj/dicionario.html)
+- [Dados da Receita Federal](https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj)
 - [Documentação CNAE](https://concla.ibge.gov.br/classificacoes/por-tema/atividades-economicas/cnae)
 
 ---

@@ -5,7 +5,6 @@ from pathlib import Path
 import sys
 import zipfile
 import pandas as pd
-from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.schemas.estabSchema import ESTABELECIMENTOS_SCHEMA as COLUMNS
@@ -46,42 +45,82 @@ def extrair_e_limpar(diretorio: Path):
         except Exception as e:
             print(f"Erro ao processar {zip_path.name}: {e}")
 
-def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_size_csv=100_000):
-    """Aplica schema aos arquivos CSV de estabelecimentos"""
+def aplicar_schema_estabelecimentos(diretorio: Path, colunas: list[str], chunk_size_csv=50000):
+    """Aplica schema aos arquivos CSV de estabelecimentos usando chunks eficientes"""
     all_csv_files = list(diretorio.glob("estabelecimentos*.csv"))
     
     if not all_csv_files:
         print("❌ Nenhum arquivo CSV de estabelecimentos encontrado")
         return None
     
-    print(f"📂 Encontrados {len(all_csv_files)} arquivos CSV")
+    print(f"📂 Encontrados {len(all_csv_files)} arquivos CSV para processar")
     
-    final_df = pd.DataFrame()
+    caminho_saida = Path("database") / "estabelecimentos_final.csv"
+    caminho_saida.parent.mkdir(exist_ok=True)
     
-    for csv_file in tqdm(all_csv_files, desc="Processando estabelecimentos"):
+    # Remove arquivo existente se houver
+    if caminho_saida.exists():
+        caminho_saida.unlink()
+    
+    total_registros = 0
+    
+    # Processa cada arquivo em chunks
+    for i, csv_file in enumerate(all_csv_files, 1):
+        print(f"📄 Processando arquivo {i}/{len(all_csv_files)}: {csv_file.name}")
+        
         try:
-            chunk_list = []
+            # Lê o arquivo em chunks
+            chunk_iter = pd.read_csv(
+                csv_file,
+                sep=';',
+                header=None,
+                names=colunas,
+                dtype=str,
+                encoding='latin1',
+                on_bad_lines='skip',
+                chunksize=chunk_size_csv
+            )
             
-            with pd.read_csv(csv_file, sep=';', header=None, names=colunas, dtype=str, 
-                           encoding='latin1', chunksize=chunk_size_csv, on_bad_lines='skip') as reader:
+            arquivo_registros = 0
+            
+            for chunk_num, chunk in enumerate(chunk_iter, 1):
+                # Salva o chunk no arquivo final
+                chunk.to_csv(
+                    caminho_saida, 
+                    mode='a',  # Modo append
+                    header=(total_registros == 0),  # Header apenas no primeiro chunk
+                    index=False, 
+                    sep=';', 
+                    encoding='utf-8'
+                )
                 
-                for chunk in reader:
-                    chunk_list.append(chunk)
+                arquivo_registros += len(chunk)
+                total_registros += len(chunk)
+                
+                # Mostra progresso
+                print(f"  📊 Chunk {chunk_num}: +{len(chunk):,} registros (Total: {total_registros:,})")
             
-            if chunk_list:
-                file_df = pd.concat(chunk_list, ignore_index=True)
-                final_df = pd.concat([final_df, file_df], ignore_index=True)
-                print(f"✅ Processado: {csv_file.name} - {len(file_df):,} registros")
+            print(f"  ✅ {csv_file.name}: {arquivo_registros:,} registros processados")
             
         except Exception as e:
             print(f"❌ Erro ao processar {csv_file.name}: {e}")
+            continue
     
-    return final_df
+    if total_registros > 0:
+        print(f"✅ Consolidação concluída!")
+        print(f"📊 Total de registros processados: {total_registros:,}")
+        print(f"💾 Arquivo salvo: {caminho_saida}")
+        
+        # Lê o resultado final para retornar
+        return pd.read_csv(caminho_saida, sep=';', encoding='utf-8', dtype=str)
+    else:
+        print("❌ Nenhum arquivo foi processado com sucesso")
+        return None
 
 def baixar_arquivos_estabelecimentos():
     print("🏢 Baixando arquivos de estabelecimentos...")
     
-    url_base = "http://200.152.38.155/CNPJ/dados_abertos_cnpj/{ano}-{mes:02d}/"
+    url_base = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/{ano}-{mes:02d}/"
     diretorio_download = Path("Data")
     diretorio_download.mkdir(exist_ok=True)
     
@@ -94,7 +133,7 @@ def baixar_arquivos_estabelecimentos():
         
         print(f"📅 Tentando {ano}-{mes:02d}...")
         
-        for j in range(1, 11):
+        for j in range(0, 11):
             url = f"{url_base}Estabelecimentos{j}.zip".format(ano=ano, mes=mes)
             nome_arquivo = f"Estabelecimentos{j}_{ano}_{mes:02d}.zip"
             caminho_arquivo = diretorio_download / nome_arquivo
@@ -127,16 +166,14 @@ def baixar_estabelecimentos():
     baixar_arquivos_estabelecimentos()
     extrair_e_limpar(Path("Data"))
     
+    # Aplica schema e processa em chunks (já salva o arquivo final)
     df_final = aplicar_schema_estabelecimentos(Path("Data"), COLUMNS)
     
     if df_final is not None and not df_final.empty:
-        caminho_saida = Path("database") / "estabelecimentos_final.csv"
-        caminho_saida.parent.mkdir(exist_ok=True)
+        print(f"✅ Processamento de estabelecimentos concluído!")
         
-        df_final.to_csv(caminho_saida, index=False, sep=';', encoding='utf-8')
-        print(f"✅ Arquivo final salvo: {caminho_saida}")
-        print(f"📊 Total de registros: {len(df_final):,}")
-        
+        # Remove arquivos CSV temporários
+        print("🧹 Limpando arquivos temporários...")
         arquivos_csv = list(Path("Data").glob("estabelecimentos*.csv"))
         for arquivo in arquivos_csv:
             arquivo.unlink()

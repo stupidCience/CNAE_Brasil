@@ -5,7 +5,6 @@ from pathlib import Path
 import sys
 import zipfile
 import pandas as pd
-from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.schemas.sociosSchema import SOCIOS_SCHEMA as COLUMNS
@@ -36,7 +35,7 @@ def extrair_e_limpar_socios(diretorio: Path):
 def baixar_arquivos_socios():
     print("👥 Baixando arquivos de sócios...")
     
-    url_base = "http://200.152.38.155/CNPJ/dados_abertos_cnpj/{ano}-{mes:02d}/"
+    url_base = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/{ano}-{mes:02d}/"
     diretorio_download = Path("Data")
     diretorio_download.mkdir(exist_ok=True)
     
@@ -49,7 +48,7 @@ def baixar_arquivos_socios():
         
         print(f"📅 Tentando {ano}-{mes:02d}...")
         
-        for j in range(1, 11):
+        for j in range(0, 11):
             url = f"{url_base}Socios{j}.zip".format(ano=ano, mes=mes)
             nome_arquivo = f"Socios{j}_{ano}_{mes:02d}.zip"
             caminho_arquivo = diretorio_download / nome_arquivo
@@ -78,8 +77,8 @@ def baixar_arquivos_socios():
         print("❌ Nenhum arquivo de sócios encontrado nos últimos 11 meses")
 
 def processar_socios():
-    """Processa arquivos CSV de sócios e consolida em um único arquivo"""
-    print("⚙️ Processando arquivos de sócios...")
+    """Processa arquivos CSV de sócios e consolida em um único arquivo usando chunks"""
+    print("⚙️ Processando arquivos de sócios com chunks...")
     
     diretorio = Path("Data")
     arquivos_csv = list(diretorio.glob("socios*.csv"))
@@ -88,34 +87,67 @@ def processar_socios():
         print("❌ Nenhum arquivo CSV de sócios encontrado")
         return
     
-    dataframes = []
+    caminho_saida = Path("database") / "socios_final.csv"
+    caminho_saida.parent.mkdir(exist_ok=True)
     
-    for arquivo in tqdm(arquivos_csv, desc="Processando sócios"):
+    # Remove arquivo existente se houver
+    if caminho_saida.exists():
+        caminho_saida.unlink()
+    
+    total_registros = 0
+    chunk_size = 50000  # Processa 50k registros por vez
+    
+    print(f"📁 Encontrados {len(arquivos_csv)} arquivos para processar")
+    
+    # Processa cada arquivo em chunks
+    for i, arquivo in enumerate(arquivos_csv, 1):
+        print(f"📄 Processando arquivo {i}/{len(arquivos_csv)}: {arquivo.name}")
+        
         try:
-            df = pd.read_csv(
+            # Lê o arquivo em chunks
+            chunk_iter = pd.read_csv(
                 arquivo,
                 sep=';',
                 header=None,
                 names=COLUMNS,
                 dtype=str,
                 encoding='latin1',
-                on_bad_lines='skip'
+                on_bad_lines='skip',
+                chunksize=chunk_size
             )
-            dataframes.append(df)
+            
+            arquivo_registros = 0
+            
+            for chunk_num, chunk in enumerate(chunk_iter, 1):
+                # Salva o chunk no arquivo final
+                chunk.to_csv(
+                    caminho_saida, 
+                    mode='a',  # Modo append
+                    header=(total_registros == 0),  # Header apenas no primeiro chunk
+                    index=False, 
+                    sep=';', 
+                    encoding='utf-8'
+                )
+                
+                arquivo_registros += len(chunk)
+                total_registros += len(chunk)
+                
+                # Mostra progresso
+                print(f"  📊 Chunk {chunk_num}: +{len(chunk):,} registros (Total: {total_registros:,})")
+            
+            print(f"  ✅ {arquivo.name}: {arquivo_registros:,} registros processados")
             
         except Exception as e:
             print(f"❌ Erro ao processar {arquivo}: {e}")
+            continue
     
-    if dataframes:
-        df_consolidado = pd.concat(dataframes, ignore_index=True)
+    if total_registros > 0:
+        print(f"✅ Consolidação concluída!")
+        print(f"📊 Total de registros processados: {total_registros:,}")
+        print(f"💾 Arquivo salvo: {caminho_saida}")
         
-        caminho_saida = Path("database") / "socios_final.csv"
-        caminho_saida.parent.mkdir(exist_ok=True)
-        
-        df_consolidado.to_csv(caminho_saida, index=False, sep=';', encoding='utf-8')
-        print(f"✅ Arquivo consolidado salvo: {caminho_saida}")
-        print(f"📊 Total de registros: {len(df_consolidado):,}")
-        
+        # Remove arquivos CSV após processamento
+        print("🧹 Limpando arquivos temporários...")
         for arquivo in arquivos_csv:
             arquivo.unlink()
             
