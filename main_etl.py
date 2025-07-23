@@ -1,40 +1,38 @@
 """
-Script principal para execução completa do processo ETL CNAE
-Este script orquestra o download, processamento e validação dos dados
+Script principal para execução do processo ETL CNAE
+Uso: python main_etl.py [--mode full|download|process]
 """
 
 import sys
+import os
 from pathlib import Path
 
-# Adiciona o diretório raiz ao path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 
-from Services.getEmpresas import getEmp
-from Services.getEstabelecimentos import getEstab  
-from Services.getSocios import getSocios
-from process.empresasConstructor import empresasConstructor
-from process.estabelecimentoConstructor import estabelecimentoConstructor
-from process.sociosConstructor import sociosConstructor
+from src.services.getEmpresas import baixar_empresas
+from src.services.getEstabelecimentos import baixar_estabelecimentos  
+from src.services.getSocios import baixar_socios
+from src.processors.empresasConstructor import empresasConstructor
+from src.processors.estabelecimentoConstructor import estabelecimentoConstructor
+from src.processors.sociosConstructor import sociosConstructor
 
 def run_full_etl():
     """Executa o processo ETL completo"""
     print("🚀 Iniciando processo ETL completo para dados CNAE...")
     
     try:
-        # Fase 1: Download e Extração
         print("\n📥 FASE 1: Download e Extração de Dados")
         print("=" * 50)
         
         print("📊 Baixando dados de Empresas...")
-        getEmp()
+        baixar_empresas()
         
         print("🏢 Baixando dados de Estabelecimentos...")
-        getEstab()
+        baixar_estabelecimentos()
         
         print("👥 Baixando dados de Sócios...")
-        getSocios()
+        baixar_socios()
         
-        # Fase 2: Processamento e Enriquecimento
         print("\n⚙️  FASE 2: Processamento e Enriquecimento")
         print("=" * 50)
         
@@ -47,7 +45,6 @@ def run_full_etl():
         print("👥 Processando dados de Sócios...")
         sociosConstructor()
         
-        # Fase 3: Conversão para Parquet
         print("\n🚀 FASE 3: Otimização - Convertendo para Parquet")
         print("=" * 50)
         from optimize_data import convert_to_parquet, benchmark_queries
@@ -69,9 +66,9 @@ def run_full_etl():
 def run_download_only():
     """Executa apenas o download dos dados"""
     print("📥 Executando apenas download de dados...")
-    getEmp()
-    getEstab() 
-    getSocios()
+    baixar_empresas()
+    baixar_estabelecimentos() 
+    baixar_socios()
 
 def run_processing_only():
     """Executa apenas o processamento dos dados"""

@@ -4,40 +4,10 @@ Melhora drasticamente a performance de consultas e reduz tamanho dos arquivos
 """
 
 import duckdb
+import pandas as pd
 import time
 from pathlib import Path
 import os
-import chardet
-
-def detect_file_encoding(file_path: str) -> str:
-    """Detecta o encoding de um arquivo CSV e retorna formato compatível com DuckDB"""
-    try:
-        with open(file_path, 'rb') as f:
-            # Lê uma amostra do arquivo para detectar encoding
-            sample = f.read(100000)  # 100KB
-            result = chardet.detect(sample)
-            detected_encoding = result['encoding']
-            confidence = result['confidence']
-            
-            print(f"   🔍 Encoding detectado: {detected_encoding} (confiança: {confidence:.2f})")
-            
-            # Mapeia encodings para formatos suportados pelo DuckDB
-            if detected_encoding:
-                detected_lower = detected_encoding.lower()
-                if 'utf' in detected_lower and '8' in detected_lower:
-                    return 'UTF-8'  # DuckDB usa UTF-8 com hífen
-                elif 'latin' in detected_lower or 'iso-8859-1' in detected_lower:
-                    return 'ISO-8859-1'  # DuckDB prefere ISO-8859-1
-                elif 'cp1252' in detected_lower or 'windows-1252' in detected_lower:
-                    return 'windows-1252'
-                else:
-                    return 'UTF-8'  # Default seguro
-            else:
-                return 'UTF-8'  # Default
-                
-    except Exception as e:
-        print(f"   ⚠️ Erro na detecção de encoding: {e}")
-        return 'UTF-8'  # Default
 
 def convert_to_parquet():
     """Converte CSVs finais para Parquet para consultas eficientes"""
@@ -61,103 +31,39 @@ def convert_to_parquet():
             print(f"🔄 Convertendo {csv_file} → {parquet_file}...")
             
             try:
-                # Detecta encoding automaticamente
-                encoding = detect_file_encoding(str(csv_path))
-                
                 # DuckDB é mais eficiente para esta conversão
                 start_time = time.time()
                 
-                # Instala extensões necessárias
-                duckdb.sql("INSTALL encodings; LOAD encodings")
-                
-                # Inicializa variável de controle
-                success = False
-                
-                # Tenta conversão simples sem especificar encoding primeiro
-                try:
-                    print(f"   🧪 Tentando sem especificar encoding (auto-detect)")
-                    
+                # Configurações específicas por tipo de arquivo
+                if "empresas" in csv_file:
+                    # Para empresas - problema de colunas desbalanceadas
                     duckdb.sql(f"""
-                        COPY (
-                            SELECT * FROM read_csv_auto('{csv_path}', 
-                                sep=';',
-                                ignore_errors=true,
-                                null_padding=true,
-                                max_line_size=1000000,
-                                strict_mode=false
-                            )
-                        ) TO '{parquet_path}' (FORMAT PARQUET, COMPRESSION 'snappy')
+                        COPY (SELECT * FROM read_csv_auto('{csv_path}', 
+                            sep=';', 
+                            strict_mode=false, 
+                            null_padding=true,
+                            ignore_errors=true
+                        )) 
+                        TO '{parquet_path}' (FORMAT PARQUET)
                     """)
-                    
-                    success = True
-                    print(f"   ✅ Sucesso com auto-detect")
-                    
-                except Exception as e:
-                    print(f"   ❌ Auto-detect falhou: {str(e)[:80]}...")
-                    
-                    # Se auto-detect falhar, tenta encodings específicos
-                    if 'socios' in csv_file:
-                        # Para sócios, tenta latin-1 primeiro (problema conhecido com caracteres especiais)
-                        encodings_to_try = ['latin-1', 'CP1252', 'windows-1252']
-                    else:
-                        # Para outros arquivos, UTF-8 primeiro
-                        encodings_to_try = ['UTF-8', 'latin-1', 'CP1252']
-                            
-                        for enc in encodings_to_try:
-                            try:
-                                print(f"   🧪 Tentando encoding: {enc}")
-                                
-                                # Para arquivos problemáticos, usa configurações mais tolerantes
-                                if 'socios' in csv_file and enc == 'latin-1':
-                                    duckdb.sql(f"""
-                                        COPY (
-                                            SELECT * FROM read_csv_auto('{csv_path}', 
-                                                sep=';',
-                                                encoding='{enc}',
-                                                ignore_errors=true,
-                                                null_padding=true,
-                                                max_line_size=2000000,
-                                                strict_mode=false,
-                                                sample_size=100000
-                                            )
-                                        ) TO '{parquet_path}' (FORMAT PARQUET, COMPRESSION 'snappy')
-                                    """)
-                                else:
-                                    duckdb.sql(f"""
-                                        COPY (
-                                            SELECT * FROM read_csv_auto('{csv_path}', 
-                                                sep=';',
-                                                encoding='{enc}',
-                                                ignore_errors=true,
-                                                null_padding=true,
-                                                max_line_size=1000000,
-                                                strict_mode=false
-                                            )
-                                        ) TO '{parquet_path}' (FORMAT PARQUET, COMPRESSION 'snappy')
-                                    """)
-                                
-                                success = True
-                                print(f"   ✅ Sucesso com encoding: {enc}")
-                                break
-                                
-                            except Exception as e:
-                                error_msg = str(e)
-                                if 'encoding' in error_msg.lower():
-                                    print(f"   ❌ Falhou com {enc}: Encoding não suportado")
-                                elif 'decode' in error_msg.lower():
-                                    print(f"   ❌ Falhou com {enc}: Erro de decodificação")
-                                else:
-                                    print(f"   ❌ Falhou com {enc}: {error_msg[:60]}...")
-                                
-                                # Remove arquivo parcial se existir
-                                if Path(parquet_path).exists():
-                                    Path(parquet_path).unlink()
-                                continue
-                            continue
-                
-                if not success:
-                    print(f"   ❌ Erro na conversão: Nenhum encoding funcionou")
-                    continue
+                elif "socios" in csv_file:
+                    # Para sócios - problema de encoding
+                    duckdb.sql(f"""
+                        COPY (SELECT * FROM read_csv_auto('{csv_path}', 
+                            sep=';',
+                            encoding='ISO-8859-1',
+                            strict_mode=false,
+                            null_padding=true,
+                            ignore_errors=true
+                        )) 
+                        TO '{parquet_path}' (FORMAT PARQUET)
+                    """)
+                else:
+                    # Para estabelecimentos (já funcionando)
+                    duckdb.sql(f"""
+                        COPY (SELECT * FROM read_csv_auto('{csv_path}', sep=';')) 
+                        TO '{parquet_path}' (FORMAT PARQUET)
+                    """)
                 
                 conversion_time = time.time() - start_time
                 
@@ -185,28 +91,16 @@ def benchmark_queries():
     
     print("\n🏃 Executando benchmark de performance...")
     
-    # Instala extensões necessárias
-    try:
-        duckdb.sql("INSTALL encodings; LOAD encodings")
-    except:
-        pass
-    
-    # Detecta encoding do arquivo empresas
-    empresas_csv = Path("database/empresas_final.csv")
-    encoding = 'UTF-8'
-    if empresas_csv.exists():
-        encoding = detect_file_encoding(str(empresas_csv))
-    
     # Testes de performance
     tests = [
         {
             'name': 'Contagem simples',
-            'query_csv': f"SELECT COUNT(*) FROM read_csv_auto('database/empresas_final.csv', sep=';', encoding='{encoding}', strict_mode=false, null_padding=true, ignore_errors=true)",
+            'query_csv': "SELECT COUNT(*) FROM read_csv_auto('database/empresas_final.csv', sep=';')",
             'query_parquet': "SELECT COUNT(*) FROM 'database/empresas_final.parquet'"
         },
         {
             'name': 'Filtro por porte',
-            'query_csv': f"SELECT COUNT(*) FROM read_csv_auto('database/empresas_final.csv', sep=';', encoding='{encoding}', strict_mode=false, null_padding=true, ignore_errors=true) WHERE porte_empresa = 'MICRO EMPRESA'",
+            'query_csv': "SELECT COUNT(*) FROM read_csv_auto('database/empresas_final.csv', sep=';') WHERE porte_empresa = 'MICRO EMPRESA'",
             'query_parquet': "SELECT COUNT(*) FROM 'database/empresas_final.parquet' WHERE porte_empresa = 'MICRO EMPRESA'"
         }
     ]
@@ -220,23 +114,19 @@ def benchmark_queries():
             result_csv = duckdb.sql(test['query_csv']).fetchone()[0]
             csv_time = time.time() - start
             
-            # Parquet (só se existir)
-            parquet_path = Path("database/empresas_final.parquet")
-            if parquet_path.exists():
-                start = time.time()  
-                result_parquet = duckdb.sql(test['query_parquet']).fetchone()[0]
-                parquet_time = time.time() - start
-                
-                speedup = csv_time / parquet_time if parquet_time > 0 else float('inf')
+            # Parquet
+            start = time.time()  
+            result_parquet = duckdb.sql(test['query_parquet']).fetchone()[0]
+            parquet_time = time.time() - start
+            
+            if csv_time > 0:
+                speedup = csv_time / parquet_time
                 print(f"   CSV: {csv_time:.2f}s (resultado: {result_csv:,})")
                 print(f"   Parquet: {parquet_time:.2f}s (resultado: {result_parquet:,})")
                 print(f"   🚀 Speedup: {speedup:.1f}x mais rápido")
-            else:
-                print(f"   CSV: {csv_time:.2f}s (resultado: {result_csv:,})")
-                print(f"   ❌ Parquet não encontrado")
             
         except Exception as e:
-            print(f"   ❌ Erro no benchmark: {str(e)[:200]}...")
+            print(f"   ❌ Erro no benchmark: {e}")
 
 def create_optimized_queries_examples():
     """Cria exemplos de consultas otimizadas usando DuckDB + Parquet"""

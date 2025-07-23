@@ -1,0 +1,6 @@
+# config_db_local.py.example
+# Copie este arquivo para config_db_local.py e configure suas credenciais
+
+DB_CONFIG_LOCAL = {
+    'password': 'SUA_SENHA_REAL_AQUI'
+}
